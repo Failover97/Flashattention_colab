@@ -89,6 +89,8 @@ def custom_opt_attention_forward(self, hidden_states, **kwargs):
     # 1. Update Cache
     # k_full, v_full = self.my_kv_cache.update(...)
     k_full, v_full = self.my_kv_cache.update(key_states, value_states)
+    k_full = k_full[:batch_size]
+    v_full = v_full[:batch_size]
     
     # 2. Reshape for FlashAttention
     # Q_reshaped = ...
