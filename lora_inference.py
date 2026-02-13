@@ -34,7 +34,10 @@ def load_models(base_model_id, lora_model_id=None):
     #       For this assignment, returning the wrapped PeftModel is fine.
     # =================================================================
     # Code:
-    
+    model = AutoModelForCausalLM.from_pretrained(base_model_id)
+    if lora_model_id is not None:
+      model = PeftModel.from_pretrained(model, lora_model_id)
+      model = model.merge_and_unload()
     # =================================================================
     
     return model, tokenizer
@@ -85,20 +88,32 @@ def custom_opt_attention_forward(self, hidden_states, **kwargs):
     # Placeholder for student implementation
     # 1. Update Cache
     # k_full, v_full = self.my_kv_cache.update(...)
+    k_full, v_full = self.my_kv_cache.update(key_states, value_states)
     
     # 2. Reshape for FlashAttention
     # Q_reshaped = ...
     # K_reshaped = ...
     # V_reshaped = ...
+
+    total_seq_len = k_full.shape[2]
+    Q_reshaped = query_states.reshape(batch_size * num_heads, seq_len, head_dim)
+    K_reshaped = k_full.reshape(batch_size * num_heads, total_seq_len, head_dim)
+    V_reshaped = v_full.reshape(batch_size * num_heads, total_seq_len, head_dim)
     
     # 3. Create Causal Mask
     # mask = 
+    mask = torch.zeros((seq_len, total_seq_len), device=hidden_states.device, dtype=torch.bool)
+    for i in range(seq_len):
+      mask[i, :total_seq_len - seq_len + i + 1] = True
     
     # 4. Call FlashAttention
     # attn_output = pseudo_flash_attention(Q_reshaped, K_reshaped, V_reshaped, mask=mask)
+    attn_output = pseudo_flash_attention(Q_reshaped, K_reshaped, V_reshaped, mask=mask)
     
     # 5. Reshape back
     # attn_output = ...
+    attn_output = attn_output.reshape(batch_size, num_heads, seq_len, head_dim)
+    attn_output = attn_output.transpose(1, 2).reshape(batch_size, seq_len, num_heads * head_dim)
 
     # Final projection
     attn_output = self.out_proj(attn_output)
