@@ -37,7 +37,7 @@ def load_models(base_model_id, lora_model_id=None):
     model = AutoModelForCausalLM.from_pretrained(base_model_id)
     if lora_model_id is not None:
       model = PeftModel.from_pretrained(model, lora_model_id)
-      # model = model.merge_and_unload()
+      model = model.merge_and_unload()
     # =================================================================
     
     return model, tokenizer
@@ -110,7 +110,8 @@ def custom_opt_attention_forward(self, hidden_states, **kwargs):
     
     # 4. Call FlashAttention
     # attn_output = pseudo_flash_attention(Q_reshaped, K_reshaped, V_reshaped, mask=mask)
-    attn_output = pseudo_flash_attention(Q_reshaped, K_reshaped, V_reshaped, mask=mask)
+    attn_output = pseudo_flash_attention(Q_reshaped.float(), K_reshaped.float(), V_reshaped.float(), mask=mask)
+    attn_output = attn_output.to(hidden_states.dtype)
     
     # 5. Reshape back
     # attn_output = ...
@@ -134,7 +135,7 @@ def enable_custom_kernels(model):
     # Adjust path if using a different model (e.g. GPT2)
     if hasattr(model, 'base_model'):
         # It's a PeftModel
-        layers = model.base_model.model.model.decoder.layers
+        layers = model.base_model.decoder.layers
         config = model.base_model.config
     else:
         # It's a raw HF model
