@@ -59,6 +59,13 @@ class KVCache:
         # Use tensor _copy function to copy new_k and new_v to the cache
         # =================================================================
         # Code:
+        if self.current_seq_len + l_new > self.max_seq_len:
+          raise ValueError("Cache overflow!")
+        self.k_cache[:, :, self.current_seq_len:self.current_seq_len + l_new, :].copy_(new_k)
+        self.v_cache[:, :, self.current_seq_len:self.current_seq_len + l_new, :].copy_(new_v)
+        self.current_seq_len += l_new
+        keys = self.k_cache[:, :, :self.current_seq_len, :]
+        values = self.v_cache[:, :, :self.current_seq_len, :]
 
         # =================================================================
 
