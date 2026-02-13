@@ -30,7 +30,7 @@ def pseudo_flash_attention(Q, K, V, mask=None, block_size_M=64, block_size_N=64)
 
     # Set mask to -inf where mask is False (masked out)
     mask = mask.to(torch.float32)
-    mask = mask.masked_fill(mask == 0, -1e9)
+    mask = mask.masked_fill(mask == 0, -1e9) - 1
         
     # Initialize Output in HBM
     O = torch.zeros_like(Q)
@@ -85,12 +85,14 @@ def pseudo_flash_attention(Q, K, V, mask=None, block_size_M=64, block_size_N=64)
             # S_ij shape should be (B, block_M, block_N)
             # Code:
             # =================================================================
+            S_ij = torch.bmm(Q_i, K_j.transpose(1, 2)) * scale
 
             # =================================================================
             
             # 2. Apply Masking for S_ij
             # Code: 
             # =================================================================
+            S_ij = S_ij + (mask_block - 1.0)
 
             # =================================================================   
                     
@@ -100,18 +102,29 @@ def pseudo_flash_attention(Q, K, V, mask=None, block_size_M=64, block_size_N=64)
             # l_block: sum(p_block) (Shape: B, block_M, 1)
             # Code:
             # =================================================================
+            m_block = S_ij.max(dim=-1, keepdim=True).values
+            p_block = torch.exp(S_ij - m_block)
+            l_block = p_block.sum(dim=-1, keepdim=True)
 
             # =================================================================
             
             # 4. Update global statistics (m, l) and Output (O)
             # Code:
             # =================================================================
+            m_new = torch.max(m_prev, m_block)
+            alpha = torch.exp(m_prev - m_new)
+            beta = torch.exp(m_block - m_new)
+            l_new = alpha * l_prev + beta * l_block
+            O_i_new = alpha * O_i_prev + beta * (p_block @ V_j)
             
             # =================================================================
 
             # Update O, l, m in the global memory
             # Code:
             # =================================================================
+            O[:, i:i_end, :] = O_i_new
+            l[:, i:i_end, :] = l_new
+            m[:, i:i_end, :] = m_new
 
             # =================================================================
             
